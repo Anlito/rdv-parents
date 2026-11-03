@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Planning des rendez-vous</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,650;12..96,700&display=swap">
+<link rel="stylesheet" href="style.css">
+<style>
+  .bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+  .bar .field { flex: 1 1 180px; }
+  .bar .field.small { flex: 0 1 120px; }
+  .panel { background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 20px clamp(14px, 3vw, 24px); display: grid; gap: 14px; min-width: 0; }
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 20px; align-items: start; }
+  @media (max-width: 760px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+  .summary { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill { border-radius: 999px; padding: 4px 12px; font-size: 0.88rem; font-weight: 700; background: var(--accent-soft); color: var(--accent); font-variant-numeric: tabular-nums; }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  .demo { background: var(--warn-soft); color: var(--warn); border-radius: 6px; padding: 10px 14px; font-weight: 700; }
+
+  .timeline { display: grid; gap: 4px; }
+  .row { display: grid; grid-template-columns: 4.2em minmax(0, 1fr); gap: 10px; align-items: center; padding: 6px 10px; border-radius: 6px; border: 1px solid transparent; font-variant-numeric: tabular-nums; }
+  .row .h { font-weight: 700; color: var(--muted); }
+  .row.pris { background: var(--accent-soft); }
+  .row.pris .h { color: var(--accent); }
+  .row.conflit { background: var(--warn-soft); border-color: var(--warn); }
+  .row.conflit .h, .row.conflit .n { color: var(--warn); }
+  .row .n { font-weight: 700; overflow-wrap: anywhere; }
+  .row .libre { color: var(--muted); font-weight: 400; }
+  .sep { border-top: 1px dashed var(--line); margin: 4px 0; }
+
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  td.nom { font-weight: 700; white-space: nowrap; }
+  td .hint { display: block; }
+  td select { padding: 6px 8px; width: auto; font-variant-numeric: tabular-nums; }
+  tr.a-placer td.nom { color: var(--warn); }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { font-size: 0.8rem; border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .note { color: var(--ink); font-size: 0.9rem; margin-top: 4px; overflow-wrap: anywhere; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  .empty { color: var(--muted); }
+</style>
+</head>
+<body>
+<main class="wrap large">
+  <header class="intro">
+    <p class="eyebrow">Page du professeur principal</p>
+    <h1>Planning des rendez-vous</h1>
+    <p>Les réponses des parents sont réparties automatiquement en rendez-vous de 10 minutes, en commençant par les familles qui ont le moins de disponibilités. Vous pouvez ensuite changer l'heure d'un élève à la main.</p>
+  </header>
+
+  <section class="panel">
+    <form id="connexion" class="bar">
+      <div class="field">
+        <label for="cle">Clé professeur</label>
+        <input type="password" id="cle" autocomplete="current-password">
+      </div>
+      <div class="field small">
+        <label for="debut">Début</label>
+        <input type="time" id="debut" value="17:30" step="300">
+      </div>
+      <div class="field small">
+        <label for="fin">Fin</label>
+        <input type="time" id="fin" value="20:00" step="300">
+      </div>
+      <div class="field small">
+        <label for="duree">Durée (min)</label>
+        <input type="number" id="duree" value="10" min="5" max="30" step="5">
+      </div>
+      <div class="actions">
+        <button type="submit" id="charger">Charger les réponses</button>
+        <button type="button" class="secondary" id="exemple">Voir un exemple</button>
+      </div>
+    </form>
+    <div id="message" class="msg" role="status" hidden></div>
+  </section>
+
+  <p id="demo" class="demo" hidden>Exemple fictif : ces élèves n'existent pas. Cliquez sur « Charger les réponses » pour voir les vraies réponses.</p>
+
+  <div id="resultat" hidden>
+    <div class="cols">
+      <section class="panel">
+        <h2>Planning</h2>
+        <div class="summary" id="resume"></div>
+        <div class="timeline" id="timeline"></div>
+        <div class="actions">
+          <button type="button" id="copier">Copier le planning</button>
+          <button type="button" class="secondary" id="reinit">Refaire la répartition</button>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Réponses des parents</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Élève</th><th>Disponibilités</th><th>Heure</th></tr></thead>
+            <tbody id="eleves"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <section class="panel" id="vide">
+    <h2>Aucune réponse chargée</h2>
+    <p class="empty">Entrez votre clé puis cliquez sur « Charger les réponses ». Le bouton « Voir un exemple » montre le fonctionnement avec des élèves fictifs.</p>
+  </section>
+</main>
+
+<script src="config.js"></script>
+<script>
+(function () {
+  var cfg = window.RDV_CONFIG;
+  var $ = function (id) { return document.getElementById(id); };
+
+  function lire(k, d) { try { var v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } }
+  function ecrire(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+
+  var eleves = [];          // { cle, prenom, tranches[], note, date, doublon }
+  var choix = {};           // cle élève -> minute choisie à la main (ou -1 = sans rendez-vous)
+  var modeExemple = false;
+
+  $('cle').value = lire('rdv.cle', '');
+  ['debut', 'fin', 'duree'].forEach(function (k) {
+    var v = lire('rdv.' + k, null);
+    if (v) $(k).value = v;
+    $(k).addEventListener('change', function () { ecrire('rdv.' + k, $(k).value); afficher(); });
+  });
+
+  function minutes(hhmm) { var p = String(hhmm).split(':'); return (+p[0]) * 60 + (+p[1] || 0); }
+  function heure(m) { return Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0'); }
+  function normaliser(s) { return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
+
+  function message(type, texte) { var m = $('message'); m.className = 'msg ' + type; m.textContent = texte; m.hidden = !texte; }
+
+  // Garde la dernière réponse de chaque élève (un parent peut renvoyer le formulaire)
+  function preparer(reponses) {
+    var parCle = {};
+    reponses.slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; }).forEach(function (r) {
+      var cle = normaliser(r.prenom);
+      if (!cle) return;
+      var doublon = parCle[cle] ? (parCle[cle].doublon || 1) + 1 : 0;
+      parCle[cle] = {
+        cle: cle, prenom: r.prenom.trim(), note: r.note || '', date: r.date, doublon: doublon,
+        tranches: String(r.creneaux).split(',').map(function (s) { return s.trim(); }).filter(Boolean)
+      };
+    });
+    return Object.keys(parCle).map(function (k) { return parCle[k]; });
+  }
+
+  function creneaux() {
+    var d = minutes($('debut').value), f = minutes($('fin').value), pas = Math.max(5, +$('duree').value || 10), l = [];
+    for (var m = d; m + pas <= f; m += pas) l.push(m);
+    return { liste: l, pas: pas };
+  }
+
+  function possibles(eleve, c) {
+    var bornes = cfg.tranches.filter(function (t) { return eleve.tranches.indexOf(t.id) >= 0; })
+      .map(function (t) { return [minutes(t.debut), minutes(t.fin)]; });
+    return c.liste.filter(function (m) { return bornes.some(function (b) { return m >= b[0] && m + c.pas <= b[1]; }); });
+  }
+
+  function repartir(c) {
+    var place = {}, pris = {};
+    eleves.forEach(function (e) {
+      var m = choix[e.cle];
+      if (m === -1 || (m !== undefined && c.liste.indexOf(m) >= 0)) { place[e.cle] = m; if (m >= 0) pris[m] = (pris[m] || 0) + 1; }
+    });
+    eleves.filter(function (e) { return !(e.cle in place); })
+      .map(function (e) { return { e: e, p: possibles(e, c) }; })
+      .sort(function (a, b) { return a.p.length - b.p.length || (a.e.date < b.e.date ? -1 : 1); })
+      .forEach(function (x) {
+        var m = x.p.find(function (m) { return !pris[m]; });
+        place[x.e.cle] = m === undefined ? null : m;
+        if (m !== undefined) pris[m] = 1;
+      });
+    return { place: place, pris: pris };
+  }
+
+  function afficher() {
+    var vide = !eleves.length;
+    $('resultat').hidden = vide;
+    $('vide').hidden = !vide;
+    $('demo').hidden = !modeExemple;
+    if (vide) return;
+
+    var c = creneaux(), r = repartir(c);
+    var parMinute = {};
+    eleves.forEach(function (e) { var m = r.place[e.cle]; if (m >= 0) (parMinute[m] = parMinute[m] || []).push(e.prenom); });
+
+    var aPlacer = eleves.filter(function (e) { return r.place[e.cle] === null; }).length;
+    var conflits = Object.keys(parMinute).filter(function (m) { return parMinute[m].length > 1; }).length;
+    var places = eleves.filter(function (e) { return r.place[e.cle] >= 0; }).length;
+    var resume = $('resume'); resume.textContent = '';
+    [[eleves.length + ' réponse' + (eleves.length > 1 ? 's' : ''), ''],
+     [places + ' / ' + c.liste.length + ' créneaux pris', places ? 'ok' : ''],
+     aPlacer ? [aPlacer + ' à placer à la main', 'warn'] : null,
+     conflits ? [conflits + ' créneau' + (conflits > 1 ? 'x' : '') + ' en double', 'warn'] : null
+    ].forEach(function (p) {
+      if (!p) return;
+      var s = document.createElement('span'); s.className = 'pill ' + p[1]; s.textContent = p[0]; resume.appendChild(s);
+    });
+
+    var tl = $('timeline'); tl.textContent = '';
+    c.liste.forEach(function (m, i) {
+      if (i && m % 30 === 0) { var sep = document.createElement('div'); sep.className = 'sep'; tl.appendChild(sep); }
+      var noms = parMinute[m] || [];
+      var row = document.createElement('div');
+      row.className = 'row' + (noms.length > 1 ? ' conflit' : noms.length ? ' pris' : '');
+      row.innerHTML = '<span class="h"></span><span class="n"></span>';
+      row.querySelector('.h').textContent = heure(m);
+      var n = row.querySelector('.n');
+      if (noms.length) n.textContent = noms.join(' + ');
+      else { n.textContent = 'libre'; n.className = 'n libre'; }
+      tl.appendChild(row);
+    });
+
+    var tb = $('eleves'); tb.textContent = '';
+    eleves.slice().sort(function (a, b) {
+      var ma = r.place[a.cle], mb = r.place[b.cle];
+      ma = ma === null ? -2 : ma; mb = mb === null ? -2 : mb;
+      return ma - mb || a.prenom.localeCompare(b.prenom, 'fr');
+    }).forEach(function (e) {
+      var tr = document.createElement('tr');
+      if (r.place[e.cle] === null) tr.className = 'a-placer';
+      var tdNom = document.createElement('td'); tdNom.className = 'nom'; tdNom.textContent = e.prenom;
+      if (e.doublon) { var h = document.createElement('span'); h.className = 'hint'; h.textContent = 'a répondu ' + (e.doublon) + ' fois, dernière réponse gardée'; tdNom.appendChild(h); }
+      var tdDispo = document.createElement('td');
+      var chips = document.createElement('div'); chips.className = 'chips';
+      e.tranches.forEach(function (t) { var s = document.createElement('span'); s.className = 'chip'; s.textContent = t; chips.appendChild(s); });
+      tdDispo.appendChild(chips);
+      if (e.note) { var nt = document.createElement('div'); nt.className = 'note'; nt.textContent = '« ' + e.note + ' »'; tdDispo.appendChild(nt); }
+      var tdH = document.createElement('td');
+      var sel = document.createElement('select');
+      sel.setAttribute('aria-label', 'Heure pour ' + e.prenom);
+      var ok = possibles(e, c);
+      var opts = [[-1, 'Sans rendez-vous']].concat(c.liste.map(function (m) {
+        return [m, heure(m) + (ok.indexOf(m) < 0 ? ' (hors dispo)' : '')];
+      }));
+      if (r.place[e.cle] === null) opts.unshift(['', 'À placer']);
+      opts.forEach(function (o) { var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; sel.appendChild(op); });
+      sel.value = r.place[e.cle] === null ? '' : String(r.place[e.cle]);
+      sel.addEventListener('change', function () {
+        if (sel.value === '') delete choix[e.cle]; else choix[e.cle] = +sel.value;
+        if (!modeExemple) ecrire('rdv.choix', choix);
+        afficher();
+      });
+      tdH.appendChild(sel);
+      tr.appendChild(tdNom); tr.appendChild(tdDispo); tr.appendChild(tdH);
+      tb.appendChild(tr);
+    });
+
+    $('copier').onclick = function () {
+      var lignes = ['Rendez-vous parents-professeur principal, ' + cfg.reunion, ''];
+      c.liste.forEach(function (m) { if (parMinute[m]) lignes.push(heure(m) + ' : ' + parMinute[m].join(' + ')); });
+      var sans = eleves.filter(function (e) { return !(r.place[e.cle] >= 0); }).map(function (e) { return e.prenom; });
+      if (sans.length) lignes.push('', 'Sans rendez-vous : ' + sans.join(', '));
+      var texte = lignes.join('\n');
+      var fini = function () { message('ok', 'Planning copié. Vous pouvez le coller dans un document ou un message.'); };
+      if (navigator.clipboard) navigator.clipboard.writeText(texte).then(fini, function () { message('err', "La copie n'a pas fonctionné."); });
+    };
+  }
+
+  $('reinit').addEventListener('click', function () {
+    choix = {};
+    if (!modeExemple) ecrire('rdv.choix', choix);
+    afficher();
+  });
+
+  $('connexion').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var cle = $('cle').value.trim();
+    if (!cfg.scriptUrl) { message('err', "L'adresse du script Google n'est pas encore renseignée dans config.js."); return; }
+    if (!cle) { message('err', 'Entrez votre clé professeur.'); $('cle').focus(); return; }
+    $('charger').disabled = true;
+    message('', '');
+    fetch(cfg.scriptUrl + '?cle=' + encodeURIComponent(cle))
+      .then(function (r) { return r.json(); })
+      .then(function (rep) {
+        if (!rep.ok) { message('err', rep.erreur === 'cle' ? 'Clé incorrecte (ou pas encore choisie dans le script).' : 'Le script a renvoyé une erreur.'); return; }
+        ecrire('rdv.cle', cle);
+        modeExemple = false;
+        eleves = preparer(rep.reponses);
+        choix = lire('rdv.choix', {});
+        message('ok', eleves.length ? 'Réponses chargées.' : "Aucun parent n'a encore répondu.");
+        afficher();
+      })
+      .catch(function () { message('err', 'Impossible de joindre le tableau de réponses. Vérifiez la connexion.'); })
+      .then(function () { $('charger').disabled = false; });
+  });
+
+  $('exemple').addEventListener('click', function () {
+    var t = cfg.tranches.map(function (x) { return x.id; });
+    var d = function (j) { return '2026-11-0' + j + 'T18:00:00Z'; };
+    modeExemple = true;
+    choix = {};
+    message('', '');
+    eleves = preparer([
+      { prenom: 'Exemple Léa', creneaux: t[0], note: '', date: d(4) },
+      { prenom: 'Exemple Noah', creneaux: [t[0], t[1]].join(', '), note: 'Mon fils a aussi un rendez-vous en 4e B à 18h.', date: d(4) },
+      { prenom: 'Exemple Inès', creneaux: t.join(', '), note: '', date: d(5) },
+      { prenom: 'Exemple Malo', creneaux: t[3], note: '', date: d(5) },
+      { prenom: 'Exemple Jade', creneaux: [t[2], t[3]].join(', '), note: 'Présence des deux parents.', date: d(6) },
+      { prenom: 'Exemple Sacha', creneaux: t[4], note: '', date: d(6) },
+      { prenom: 'Exemple Sacha', creneaux: [t[3], t[4]].join(', '), note: 'Finalement 19h possible.', date: d(7) },
+      { prenom: 'Exemple Hugo', creneaux: t[0], note: '', date: d(7) },
+      { prenom: 'Exemple Rose', creneaux: t[0], note: '', date: d(7) },
+      { prenom: 'Exemple Tom', creneaux: t[0], note: '', date: d(8) }
+    ]);
+    afficher();
+  });
+
+  afficher();
+})();
+</script>
+</body>
+</html>

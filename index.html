@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rendez-vous parents-professeur</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,650;12..96,700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="wrap">
+  <header class="intro">
+    <p class="eyebrow">Collège Pont Rousseau · Rencontre parents-professeurs</p>
+    <h1>Rendez-vous avec le professeur principal</h1>
+    <p>La rencontre a lieu le <strong id="reunion">mardi 17 novembre 2026</strong>. Indiquez les tranches horaires où vous êtes disponibles. Je vous enverrai ensuite l'heure précise de votre rendez-vous (environ 10 minutes) par l'intermédiaire de votre enfant.</p>
+    <p>Merci de répondre avant le <strong id="limite">lundi 9 novembre 2026</strong>.</p>
+  </header>
+
+  <form id="form" class="coupon" novalidate>
+    <div class="field">
+      <label for="prenom">Prénom de l'élève</label>
+      <input type="text" id="prenom" name="prenom" autocomplete="off" maxlength="60" required>
+      <span class="hint">Ajoutez l'initiale du nom si deux élèves de la classe ont le même prénom.</span>
+    </div>
+
+    <fieldset>
+      <legend class="legend">Vos disponibilités <span class="hint">(cochez une ou plusieurs tranches)</span></legend>
+      <div class="slots" id="slots"></div>
+    </fieldset>
+
+    <div class="field">
+      <label for="note">Précisions <span class="hint">(facultatif)</span></label>
+      <textarea id="note" name="note" maxlength="1000" placeholder="Par exemple : disponible à partir de 18h15 seulement, ou rendez-vous en même temps que pour un frère ou une sœur."></textarea>
+    </div>
+
+    <div id="message" class="msg" role="status" hidden></div>
+    <div><button type="submit" id="envoyer">Envoyer ma réponse</button></div>
+  </form>
+
+  <p class="foot">Aucun compte n'est nécessaire. Seul le professeur principal voit les réponses.</p>
+</main>
+
+<script src="config.js"></script>
+<script>
+(function () {
+  var cfg = window.RDV_CONFIG;
+  document.getElementById('reunion').textContent = cfg.reunion;
+  document.getElementById('limite').textContent = cfg.limite;
+
+  var slots = document.getElementById('slots');
+  cfg.tranches.forEach(function (t, i) {
+    var lab = document.createElement('label');
+    lab.className = 'slot';
+    lab.innerHTML = '<input type="checkbox" name="creneau" id="t' + i + '"><span></span>';
+    lab.querySelector('input').value = t.id;
+    lab.querySelector('span').textContent = t.debut.replace(':', 'h') + ' – ' + t.fin.replace(':', 'h');
+    slots.appendChild(lab);
+  });
+
+  var form = document.getElementById('form');
+  var msg = document.getElementById('message');
+  var bouton = document.getElementById('envoyer');
+
+  function afficher(type, texte) {
+    msg.className = 'msg ' + type;
+    msg.textContent = texte;
+    msg.hidden = false;
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var prenom = form.prenom.value.trim();
+    var coches = Array.prototype.slice.call(form.querySelectorAll('input[name="creneau"]:checked'))
+      .map(function (c) { return c.value; });
+    if (!prenom) { afficher('err', "Indiquez le prénom de l'élève."); form.prenom.focus(); return; }
+    if (!coches.length) { afficher('err', 'Cochez au moins une tranche horaire.'); return; }
+    if (!cfg.scriptUrl) { afficher('err', "Le formulaire n'est pas encore relié au tableau de réponses."); return; }
+
+    bouton.disabled = true;
+    bouton.textContent = 'Envoi…';
+    var corps = new URLSearchParams({ prenom: prenom, creneaux: coches.join(', '), note: form.note.value.trim() });
+    fetch(cfg.scriptUrl, { method: 'POST', body: corps })
+      .then(function (r) { return r.json(); })
+      .then(function (rep) {
+        if (!rep.ok) throw new Error();
+        form.reset();
+        afficher('ok', 'Merci, votre réponse est bien enregistrée (' + prenom + ' : ' + coches.join(', ') + ').');
+      })
+      .catch(function () {
+        afficher('err', "La réponse n'a pas pu être envoyée. Vérifiez votre connexion et réessayez.");
+      })
+      .then(function () {
+        bouton.disabled = false;
+        bouton.textContent = 'Envoyer ma réponse';
+      });
+  });
+})();
+</script>
+</body>
+</html>
